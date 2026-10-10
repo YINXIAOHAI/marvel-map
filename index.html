@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Marvel Map · v1.6.5</title>
+<title>Marvel Map · v1.6.6</title>
 <link rel="stylesheet" href="vendor/leaflet.css" />
 <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/leaflet/1.9.4/leaflet.css" />
 <style>
@@ -420,11 +420,13 @@ function peakIcon(p, large) {
   });
 }
 function viewIcon(color) {
+  const isSmall = window.innerWidth < 860;
+  const r = isSmall ? 6 : 8;
   return L.divIcon({
     className: "view-marker",
-    html: '<div class="view-dot" style="background:' + color + '"></div>',
-    iconSize: [8, 8],
-    iconAnchor: [4, 4]
+    html: '<div class="view-dot" style="background:' + color + ';width:' + r + 'px;height:' + r + 'px"></div>',
+    iconSize: [r + 2, r + 2],
+    iconAnchor: [(r + 2) / 2, (r + 2) / 2]
   });
 }
 function lakeIcon() {
@@ -549,7 +551,8 @@ function renderFilters() {
   bV.textContent = showViews ? "看山地图：开" : "看山地图：关";
   bV.onclick = () => {
     showViews = !showViews;
-    viewMarkers.forEach(m => { if (showViews) m.addTo(map); else map.removeLayer(m); });
+    if (typeof updateViewVisibility === "function") updateViewVisibility();
+    else viewMarkers.forEach(m => { if (showViews) m.addTo(map); else map.removeLayer(m); });
     renderFilters(); renderList();
   };
   boxS.appendChild(bV);
@@ -644,11 +647,26 @@ PEAKS.forEach((p, i) => {
     <div style="margin-top:2px;color:#888">${p.lat.toFixed(4)}°, ${p.lng.toFixed(4)}°</div>
   `, { maxWidth:360, maxHeight:500 });
   marker.on("click", () => { activeId = i; renderList(); });
+  marker.setZIndexOffset(1000); // attractions above view points
   peakMarkers.push(marker);
 
-  (p.vs || []).forEach(v => {
+  (p.vs || []).forEach((v, vi) => {
     if (!v.lat || !v.lng) return;
-    const vm = L.marker([v.lat, v.lng], { icon: viewIcon(viewTypeColor(v.type)) });
+    // offset if same/near parent coords to avoid exact overlap
+    let vlat = v.lat, vlng = v.lng;
+    const dLat = Math.abs(vlat - p.lat);
+    const dLng = Math.abs(vlng - p.lng);
+    if (dLat < 0.012 && dLng < 0.012) {
+      const ang = (i * 1.7 + vi * 2.1) % (Math.PI * 2);
+      const dist = 0.012 + vi * 0.008;
+      vlat = p.lat + Math.sin(ang) * dist;
+      vlng = p.lng + Math.cos(ang) * dist * 1.4;
+    }
+    const vm = L.marker([vlat, vlng], {
+      icon: viewIcon(viewTypeColor(v.type)),
+      zIndexOffset: 200,
+      interactive: true
+    });
     vm.bindPopup(`
       <div class="t">📍 ${v.name}</div>
       <div><strong>${p.n}</strong> · ${v.type || "观测点"}</div>
@@ -656,10 +674,25 @@ PEAKS.forEach((p, i) => {
       <div>看点：${v.tip || "—"}</div>
       <div>时间：${v.best || "—"}</div>
     `);
+    vm._isView = true;
     if (showViews) vm.addTo(map);
     viewMarkers.push(vm);
   });
 });
+
+function updateViewVisibility() {
+  const z = map.getZoom();
+  // hide tiny view markers when zoomed out (prevents overlap clutter)
+  const show = showViews && z >= 7;
+  viewMarkers.forEach(m => {
+    if (show) {
+      if (!map.hasLayer(m)) m.addTo(map);
+    } else {
+      if (map.hasLayer(m)) map.removeLayer(m);
+    }
+  });
+}
+map.on("zoomend", updateViewVisibility);
 
 document.getElementById("search").addEventListener("input", renderList);
 // mobile map/list toggle
@@ -731,6 +764,7 @@ bindLegendFilter("lg-landscape", "landscape");
 renderFilters();
 renderList();
 refreshLegend();
+if (typeof updateViewVisibility === "function") updateViewVisibility();
 setStatus("就绪", false);
 </script>
 </body>
