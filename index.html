@@ -1,10 +1,9 @@
-<!-- AI生成 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>世界名山峰 · 看山地图 v1.6.5</title>
+<title>Marvel Map · v1.6.5</title>
 <link rel="stylesheet" href="vendor/leaflet.css" />
 <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/leaflet/1.9.4/leaflet.css" />
 <style>
@@ -122,6 +121,7 @@
     padding:10px 12px; font-size:13px; max-width:420px; box-shadow:0 2px 10px rgba(0,0,0,0.06);
   }
   .tabs { display:flex; gap:8px; margin:8px 0; }
+  .toggle-map { display:none; }
   .tab {
     flex:1; padding:8px 12px; border-radius:10px; border:1px solid var(--line);
     background:#f4f0ea; font-size:13px; font-weight:600; cursor:pointer;
@@ -142,17 +142,82 @@
     padding:6px 10px; font-size:11px; color:#5c6662;
   }
   .map-status.err { color:#b33a2b; border-color:#e2b4ad; }
-  @media (max-width:900px) {
-    .app { flex-direction:column; }
-    .side { width:100%; max-width:none; height:48%; border-right:none; border-top:1px solid var(--line); }
-    #map { height:52%; }
+
+  /* responsive toolbar */
+  .topbar { display:none; }
+  /* tablet */
+  @media (max-width: 1100px) {
+    .side { width: 340px; max-width: 48vw; }
+    .item .name { font-size: 12px; }
+    .legend { transform: scale(0.92); transform-origin: right bottom; }
+    .title-bar { max-width: 280px; }
   }
+  /* mobile / tablet portrait */
+  @media (max-width: 860px) {
+    .app { flex-direction: column; }
+    .topbar {
+      display:flex; gap:8px; padding:8px 10px;
+      background:var(--panel); border-bottom:1px solid var(--line);
+    }
+    .topbar .tab { flex:1; }
+    .side {
+      width:100%; max-width:none; height:100%; border-right:none;
+      transition: height .25s ease;
+    }
+    .side.collapsed { height:0; overflow:hidden; padding:0; border:0; }
+    #map { height:100%; }
+    .app.map-mode .side { display:none; }
+    .app.list-mode #map { display:none; }
+    .app.list-mode .side { display:flex; height:100%; }
+    .side header { padding:10px 12px 8px; }
+    .side h1 { font-size:15px; }
+    .side .sub { display:none; }
+    .stat { font-size:10px; gap:8px; }
+    .filters { max-height:72px; }
+    .chip { font-size:11px; padding:4px 10px; }
+    .thumb { width:64px; height:48px; }
+    .title-bar {
+      left:8px; right:8px; top:52px; max-width:none;
+      padding:6px 10px; font-size:12px;
+    }
+    .title-bar br { display:none; }
+    .legend {
+      right:8px; bottom:56px; padding:8px 10px;
+      font-size:11px; line-height:1.65;
+      transform:scale(0.88); transform-origin:right bottom;
+    }
+    .map-status { bottom:8px; left:8px; right:8px; }
+    .toggle-map {
+      display:flex; position:fixed; left:50%; bottom:14px;
+      transform:translateX(-50%); z-index:900;
+      background:var(--accent); color:#fff; border:0;
+      border-radius:999px; padding:10px 18px; font-size:13px;
+      box-shadow:0 6px 18px rgba(0,0,0,.22); cursor:pointer;
+    }
+  }
+  /* desktop */
+  @media (min-width: 1400px) {
+    .side { width: 420px; }
+    .item .name { font-size: 14px; }
+    .item .meta { font-size: 12px; }
+  }
+  /* touch devices */
+  @media (hover: none) {
+    .item { padding:12px 10px; }
+    .chip { min-height:32px; }
+  }
+
 </style>
 </head>
 <body>
 <p data-aigc-mark="1" style="margin:0 0 8px;font-size:10px;line-height:1.3;color:#6b6560;font-weight:400;">AI生成</p>
 
-<div class="app">
+<div class="topbar">
+  <button class="tab active" id="tab-mtn2">山峰</button>
+  <button class="tab" id="tab-lake2">湖泊</button>
+  <button class="tab" id="tab-spot2">名胜</button>
+</div>
+<div class="app list-mode" id="app-root">
   <aside class="side">
     <header>
       <h1>世界名山峰 · 看山地图</h1>
@@ -199,6 +264,7 @@
     <div class="row"><span class="dot-sample" style="background:#e67e22;width:8px;height:8px"></span><span>村落/景区</span></div>
   </div>
   <div class="map-status" id="map-status">地图加载中…</div>
+  <button class="toggle-map" id="toggle-map">查看地图</button>
 </div>
 <script src="vendor/leaflet.js"></script>
 <script>
@@ -596,36 +662,54 @@ PEAKS.forEach((p, i) => {
 });
 
 document.getElementById("search").addEventListener("input", renderList);
-document.getElementById("tab-mtn").addEventListener("click", function() {
-  activeTab = "mtn";
+// mobile map/list toggle
+const appRoot = document.getElementById("app-root");
+const toggleBtn = document.getElementById("toggle-map");
+function setViewMode(mode) {
+  if (!appRoot) return;
+  appRoot.classList.remove("list-mode", "map-mode");
+  appRoot.classList.add(mode);
+  if (toggleBtn) {
+    toggleBtn.textContent = (mode === "map-mode") ? "查看列表" : "查看地图";
+  }
+  if (mode === "map-mode") {
+    setTimeout(function() { if (map && map.invalidateSize) map.invalidateSize(); }, 260);
+  }
+}
+if (toggleBtn) {
+  toggleBtn.addEventListener("click", function() {
+    setViewMode(appRoot.classList.contains("map-mode") ? "list-mode" : "map-mode");
+  });
+}
+// desktop default: both visible
+if (window.matchMedia && window.matchMedia("(min-width: 861px)").matches) {
+  appRoot.classList.remove("list-mode", "map-mode");
+} else {
+  setViewMode("map-mode");
+}
+// topbar mobile tabs
+function syncTabs(which) {
+  ["mtn", "lake", "spot"].forEach(function(t) {
+    ["tab-" + t, "tab-" + t + "2"].forEach(function(id) {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle("active", t === which);
+    });
+  });
+}
+function switchTab(which) {
+  activeTab = which;
   sortKey = "sc";
   activeId = null;
   spotTypeFilter = null;
-  document.getElementById("tab-mtn").classList.add("active");
-  document.getElementById("tab-lake").classList.remove("active");
-  document.getElementById("tab-spot").classList.remove("active");
+  syncTabs(which);
   renderFilters(); renderList(); refreshLegend();
-});
-document.getElementById("tab-lake").addEventListener("click", function() {
-  activeTab = "lake";
-  sortKey = "sc";
-  activeId = null;
-  spotTypeFilter = null;
-  document.getElementById("tab-lake").classList.add("active");
-  document.getElementById("tab-mtn").classList.remove("active");
-  document.getElementById("tab-spot").classList.remove("active");
-  renderFilters(); renderList(); refreshLegend();
-});
-document.getElementById("tab-spot").addEventListener("click", function() {
-  activeTab = "spot";
-  sortKey = "sc";
-  activeId = null;
-  spotTypeFilter = null;
-  document.getElementById("tab-spot").classList.add("active");
-  document.getElementById("tab-mtn").classList.remove("active");
-  document.getElementById("tab-lake").classList.remove("active");
-  renderFilters(); renderList(); refreshLegend();
-});
+}
+document.getElementById("tab-mtn").addEventListener("click", function() { switchTab("mtn"); });
+document.getElementById("tab-mtn2").addEventListener("click", function() { switchTab("mtn"); });
+document.getElementById("tab-lake").addEventListener("click", function() { switchTab("lake"); });
+document.getElementById("tab-lake2").addEventListener("click", function() { switchTab("lake"); });
+document.getElementById("tab-spot").addEventListener("click", function() { switchTab("spot"); });
+document.getElementById("tab-spot2").addEventListener("click", function() { switchTab("spot"); });
 function refreshLegend() {
   document.getElementById("legend-mtn").style.display = (activeTab === "mtn") ? "" : "none";
   document.getElementById("legend-lake").style.display = (activeTab === "lake") ? "" : "none";
