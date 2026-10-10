@@ -1,4 +1,4 @@
-# Marvel Map · 世界名山峰
+# Marvel Map 
 
 > 全球山峰、湖泊与风景名胜交互地图 | Interactive map of the world's famous mountains, lakes, and scenic sites
 
